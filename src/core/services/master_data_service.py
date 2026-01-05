@@ -15,7 +15,7 @@ class MasterDataService:
     
     def __init__(self):
         """MasterDataService 초기화."""
-        self.excel_columns = ['일자', '종목', '금액']
+        self.excel_columns = ['일자', '종목코드', '종목', '금액']
     
     def transform_to_excel_schema(
         self,
@@ -25,11 +25,11 @@ class MasterDataService:
         """일별 데이터를 Excel 스키마로 변환합니다.
         
         Args:
-            daily_data (pd.DataFrame): KRX 일별 데이터 (종목명, 순매수_거래대금 컬럼 포함).
+            daily_data (pd.DataFrame): KRX 일별 데이터 (종목코드, 종목명, 순매수_거래대금 컬럼 포함).
             date_int (int): 날짜 정수 (예: 20251121).
             
         Returns:
-            pd.DataFrame: 변환된 DataFrame (일자, 종목, 금액 컬럼).
+            pd.DataFrame: 변환된 DataFrame (일자, 종목코드, 종목, 금액 컬럼).
         """
         try:
             # 날짜 정수를 문자열 'YYYYMMDD'로 변환
@@ -39,6 +39,7 @@ class MasterDataService:
             formatted_df = (
                 pd.DataFrame({
                     '일자': date_str,
+                    '종목코드': daily_data['종목코드'],
                     '종목': daily_data['종목명'],
                     '금액': pd.to_numeric(daily_data['순매수_거래대금'])
                 })
