@@ -300,16 +300,17 @@ class RankingExcelAdapter(RankingReportPort):
                     
                     self._write_rank_change(sheet, rank_col, row, diff)
             
-            # 공통 종목 색칠
+            # 공통 종목에 (쌍) 표시 추가
             market = layout['market']
             if market in common_stocks:
-                ExcelFormatter.apply_common_stock_fill(
-                    sheet,
-                    layout['stock_col'],
-                    layout['start_row'],
-                    pasted_count,
-                    common_stocks[market]
-                )
+                stock_col = layout['stock_col']
+                start_row = layout['start_row']
+                for i in range(pasted_count):
+                    row = start_row + i
+                    stock_cell = sheet[f"{stock_col}{row}"]
+                    stock_name = stock_cell.value
+                    if stock_name and stock_name in common_stocks[market]:
+                        stock_cell.value = f"{stock_name} (쌍)"
             
             ExcelSheetBuilder.clear_ranking_remaining_rows(sheet, layout, pasted_count, self.TOP_N)
             

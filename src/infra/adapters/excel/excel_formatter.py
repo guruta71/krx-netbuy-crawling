@@ -122,37 +122,7 @@ class ExcelFormatter:
                     ws[f"{date_col}{cell.row}"].fill = fill
                     break
     
-    @staticmethod
-    def apply_common_stock_fill(
-        ws: Worksheet,
-        stock_col: str,
-        start_row: int,
-        pasted_count: int,
-        common_stocks: Set[str],
-        color: str = 'common_blue'
-    ):
-        """공통 종목에 배경색을 적용합니다 (RankingExcelAdapter용).
-        
-        Args:
-            ws (Worksheet): 워크시트.
-            stock_col (str): 종목명 열 (예: 'D', 'F').
-            start_row (int): 시작 행.
-            pasted_count (int): 붙여넣은 행 수.
-            common_stocks (Set[str]): 공통 종목명 Set.
-            color (str): 색상 키 (기본: 'common_blue').
-        """
-        fill = PatternFill(
-            start_color=ExcelFormatter.COLORS[color],
-            end_color=ExcelFormatter.COLORS[color],
-            fill_type="solid"
-        )
-        
-        for i in range(pasted_count):
-            current_row = start_row + i
-            stock_cell = ws[f"{stock_col}{current_row}"]
-            if stock_cell.value in common_stocks:
-                stock_cell.fill = fill
-    
+
     @staticmethod
     def set_column_width(ws: Worksheet, column_letter: str, width: float):
         """열 너비를 설정합니다.
