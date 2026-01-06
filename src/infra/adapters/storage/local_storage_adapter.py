@@ -46,10 +46,10 @@ class LocalStorageAdapter(StoragePort):
             full_path = self.base_path / path
             self.ensure_directory(str(full_path.parent.relative_to(self.base_path)))
             df.to_excel(full_path, **kwargs)
-            print(f"[LocalStorage] ✅ Excel 저장: {path}")
+            print(f"[LocalStorage] [OK] Excel 저장: {path}")
             return True
         except Exception as e:
-            print(f"[LocalStorage] 🚨 Excel 저장 실패 ({path}): {e}")
+            print(f"[LocalStorage] [Error] Excel 저장 실패 ({path}): {e}")
             return False
     
     def save_dataframe_csv(self, df: pd.DataFrame, path: str, **kwargs) -> bool:
@@ -67,10 +67,10 @@ class LocalStorageAdapter(StoragePort):
             full_path = self.base_path / path
             self.ensure_directory(str(full_path.parent.relative_to(self.base_path)))
             df.to_csv(full_path, **kwargs)
-            print(f"[LocalStorage] ✅ CSV 저장: {path}")
+            print(f"[LocalStorage] [OK] CSV 저장: {path}")
             return True
         except Exception as e:
-            print(f"[LocalStorage] 🚨 CSV 저장 실패 ({path}): {e}")
+            print(f"[LocalStorage] [Error] CSV 저장 실패 ({path}): {e}")
             return False
     
     def save_workbook(self, book: openpyxl.Workbook, path: str) -> bool:
@@ -87,10 +87,10 @@ class LocalStorageAdapter(StoragePort):
             full_path = self.base_path / path
             self.ensure_directory(str(full_path.parent.relative_to(self.base_path)))
             book.save(full_path)
-            print(f"[LocalStorage] ✅ Workbook 저장: {path}")
+            print(f"[LocalStorage] [OK] Workbook 저장: {path}")
             return True
         except Exception as e:
-            print(f"[LocalStorage] 🚨 Workbook 저장 실패 ({path}): {e}")
+            print(f"[LocalStorage] [Error] Workbook 저장 실패 ({path}): {e}")
             return False
     
     def load_workbook(self, path: str) -> Optional[openpyxl.Workbook]:
@@ -106,10 +106,10 @@ class LocalStorageAdapter(StoragePort):
             full_path = self.base_path / path
             return openpyxl.load_workbook(full_path)
         except FileNotFoundError:
-            print(f"[LocalStorage] ⚠️ 파일 없음: {path}")
+            print(f"[LocalStorage] [Warn] 파일 없음: {path}")
             return None
         except Exception as e:
-            print(f"[LocalStorage] 🚨 Workbook 로드 실패 ({path}): {e}")
+            print(f"[LocalStorage] [Error] Workbook 로드 실패 ({path}): {e}")
             return None
     
     def path_exists(self, path: str) -> bool:
@@ -142,7 +142,7 @@ class LocalStorageAdapter(StoragePort):
                 full_path.mkdir(parents=True, exist_ok=True)
             return True
         except Exception as e:
-            print(f"[LocalStorage] 🚨 디렉토리 생성 실패 ({path}): {e}")
+            print(f"[LocalStorage] [Error] 디렉토리 생성 실패 ({path}): {e}")
             return False
 
     def load_dataframe(self, path: str, sheet_name: str = None, **kwargs) -> pd.DataFrame:
@@ -165,7 +165,7 @@ class LocalStorageAdapter(StoragePort):
             target_sheet = 0 if sheet_name is None else sheet_name
             return pd.read_excel(full_path, sheet_name=target_sheet, **kwargs)
         except Exception as e:
-            print(f"[LocalStorage] 🚨 DataFrame 로드 실패 ({path}): {e}")
+            print(f"[LocalStorage] [Error] DataFrame 로드 실패 ({path}): {e}")
             return pd.DataFrame()
 
     def get_file(self, path: str) -> Optional[bytes]:
@@ -185,7 +185,7 @@ class LocalStorageAdapter(StoragePort):
             with open(full_path, 'rb') as f:
                 return f.read()
         except Exception as e:
-            print(f"[LocalStorage] 🚨 파일 읽기 실패 ({path}): {e}")
+            print(f"[LocalStorage] [Error] 파일 읽기 실패 ({path}): {e}")
             return None
 
     def put_file(self, path: str, data: bytes) -> bool:
@@ -204,8 +204,8 @@ class LocalStorageAdapter(StoragePort):
             
             with open(full_path, 'wb') as f:
                 f.write(data)
-            print(f"[LocalStorage] ✅ 파일 저장: {path}")
+            print(f"[LocalStorage] [OK] 파일 저장: {path}")
             return True
         except Exception as e:
-            print(f"[LocalStorage] 🚨 파일 저장 실패 ({path}): {e}")
+            print(f"[LocalStorage] [Error] 파일 저장 실패 ({path}): {e}")
             return False

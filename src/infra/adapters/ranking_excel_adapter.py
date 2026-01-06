@@ -158,7 +158,7 @@ class RankingExcelAdapter(RankingReportPort):
                     with open(real_template_path, 'rb') as f:
                         template_data = f.read()
             except Exception as e:
-                print(f"    -> [Adapter:RankingExcel] 🚨 로컬 템플릿 읽기 오류: {e}")
+                print(f"    -> [Adapter:RankingExcel] [Error] 로컬 템플릿 읽기 오류: {e}")
 
             if template_data:
                 # 타겟 경로에 템플릿 저장 (Source Storage에 우선 저장하여 로드 가능하게 함)
@@ -166,17 +166,17 @@ class RankingExcelAdapter(RankingReportPort):
                 if self.source_storage.put_file(self.file_path, template_data):
                     print(f"    -> [Adapter:RankingExcel] 템플릿 복사 및 업로드 성공")
                 else:
-                    print(f"    -> [Adapter:RankingExcel] 🚨 템플릿 저장(업로드) 실패")
+                    print(f"    -> [Adapter:RankingExcel] [Error] 템플릿 저장(업로드) 실패")
                     return None
             else:
-                print(f"    -> [Adapter:RankingExcel] 🚨 로컬 템플릿 파일을 찾을 수 없습니다: {self.template_file_path}")
+                print(f"    -> [Adapter:RankingExcel] [Error] 로컬 템플릿 파일을 찾을 수 없습니다: {self.template_file_path}")
                 # 템플릿이 없으면 새 파일 생성 로직으로 갈 수도 있지만, 여기서는 실패 처리
                 return None
 
         # 파일 로드
         book = self.source_storage.load_workbook(self.file_path)
         if not book:
-            print(f"    -> [Adapter:RankingExcel] 🚨 워크북 로드 실패: {self.file_path}")
+            print(f"    -> [Adapter:RankingExcel] [Error] 워크북 로드 실패: {self.file_path}")
             return None
             
         return book
@@ -346,7 +346,7 @@ class RankingExcelAdapter(RankingReportPort):
         except Exception as e:
             import traceback
             traceback.print_exc()
-            print(f"    -> [Adapter:RankingExcel] 🚨 시트 생성 실패: {e}")
+            print(f"    -> [Adapter:RankingExcel] [Error] 시트 생성 실패: {e}")
             return None
     
     def _update_sheet_content(
@@ -574,7 +574,7 @@ class RankingExcelAdapter(RankingReportPort):
         for storage in self.target_storages:
             success = storage.save_workbook(book, self.file_path)
             if success:
-                print(f"    -> [Adapter:RankingExcel] ✅ {storage.__class__.__name__} 순위표 저장 완료")
+                print(f"    -> [Adapter:RankingExcel] [OK] {storage.__class__.__name__} 순위표 저장 완료")
             else:
                 all_success = False
         return all_success

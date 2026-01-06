@@ -40,7 +40,7 @@ class WatchlistFileAdapter(WatchlistPort):
             data_list (List[KrxData]): KRX 데이터 리스트.
         """
         if not data_list:
-            print("  [Adapter:WatchlistFile] ⚠️ 데이터가 없어 저장을 건너뜁니다")
+            print("  [Adapter:WatchlistFile] [Warn] 데이터가 없어 저장을 건너뜁니다")
             return
 
         date_str = data_list[0].date_str
@@ -53,7 +53,7 @@ class WatchlistFileAdapter(WatchlistPort):
             top_stocks_map[item.key] = item.data['종목명'].head(self.TOP_N).tolist()[:self.TOP_N]
         
         if not top_stocks_map:
-            print("  [Adapter:WatchlistFile] ⚠️ 저장할 종목이 없습니다")
+            print("  [Adapter:WatchlistFile] [Warn] 저장할 종목이 없습니다")
             return
         
         # 공통 저장 로직 사용
@@ -75,7 +75,7 @@ class WatchlistFileAdapter(WatchlistPort):
             date_str (str): 날짜 문자열.
         """
         if not top_stocks:
-            print("  [Adapter:WatchlistFile] ⚠️ 누적 상위종목 데이터가 없어 저장을 건너뜁니다")
+            print("  [Adapter:WatchlistFile] [Warn] 누적 상위종목 데이터가 없어 저장을 건너뜁니다")
             return
         
         # 공통 저장 로직 사용
@@ -110,7 +110,7 @@ class WatchlistFileAdapter(WatchlistPort):
                 all_stock_names.extend(top_stocks[key][:self.TOP_N])
         
         if not all_stock_names:
-            print(f"  [Adapter:WatchlistFile] ⚠️ 저장할 {description}이 없습니다")
+            print(f"  [Adapter:WatchlistFile] [Warn] 저장할 {description}이 없습니다")
             return
         
         # DataFrame 생성 (헤더: 종목명)
@@ -139,4 +139,4 @@ class WatchlistFileAdapter(WatchlistPort):
             
             if success:
                 storage_name = storage.__class__.__name__
-                print(f"  [Adapter:WatchlistFile] ✅ {storage_name} {description} 파일 저장 완료: {filename} ({len(df)}개 종목)")
+                print(f"  [Adapter:WatchlistFile] [OK] {storage_name} {description} 파일 저장 완료: {filename} ({len(df)}개 종목)")

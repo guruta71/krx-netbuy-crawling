@@ -44,7 +44,7 @@ class DailyExcelAdapter(DailyReportPort):
         """
         for item in data_list:
             if item.data.empty:
-                print(f"  [Adapter:DailyExcel] ⚠️ {item.key} 데이터가 비어있어 저장을 건너뜁니다.")
+                print(f"  [Adapter:DailyExcel] [Warn] {item.key} 데이터가 비어있어 저장을 건너뜁니다.")
                 continue
 
             try:
@@ -86,10 +86,10 @@ class DailyExcelAdapter(DailyReportPort):
                     success = storage.save_workbook(wb, path=filename)
                     if success:
                         storage_name = storage.__class__.__name__
-                        print(f"  [Adapter:DailyExcel] ✅ {storage_name} 저장 완료: {filename}")
+                        print(f"  [Adapter:DailyExcel] [OK] {storage_name} 저장 완료: {filename}")
 
             except Exception as e:
-                print(f"  [Adapter:DailyExcel] 🚨 {item.key} 저장 실패: {e}")
+                print(f"  [Adapter:DailyExcel] [Error] {item.key} 저장 실패: {e}")
 
     def load_daily_reports(self, date_str: str) -> List[KrxData]:
         """해당 날짜의 일별 리포트 파일들을 로드합니다.
@@ -128,7 +128,7 @@ class DailyExcelAdapter(DailyReportPort):
                 df = self.source_storage.load_dataframe(filename)
                 
                 if df.empty:
-                    print(f"  [Adapter:DailyExcel] ⚠️ 파일이 없습니다: {filename}")
+                    print(f"  [Adapter:DailyExcel] [Warn] 파일이 없습니다: {filename}")
                     return [] # 하나라도 없으면 실패 처리
                 
 
@@ -148,8 +148,8 @@ class DailyExcelAdapter(DailyReportPort):
                 restored_data.append(krx_data)
                 
             except Exception as e:
-                print(f"  [Adapter:DailyExcel] 🚨 파일 로드 중 오류 ({key}): {e}")
+                print(f"  [Adapter:DailyExcel] [Error] 파일 로드 중 오류 ({key}): {e}")
                 return []
 
-        print(f"[Adapter:DailyExcel] ✅ {len(restored_data)}개 파일 로드 및 데이터 복원 완료")
+        print(f"[Adapter:DailyExcel] [OK] {len(restored_data)}개 파일 로드 및 데이터 복원 완료")
         return restored_data
