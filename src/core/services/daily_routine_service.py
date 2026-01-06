@@ -39,7 +39,7 @@ class DailyRoutineService:
         self.ranking_port = ranking_port
         self.watchlist_port = watchlist_port
 
-    async def execute(self, date_str: Optional[str] = None):
+    def execute(self, date_str: Optional[str] = None):
         """전체 일일 루틴을 실행합니다.
 
         다음 단계를 순차적으로 실행합니다:
@@ -70,7 +70,7 @@ class DailyRoutineService:
         else:
             # 2. 파일이 없으면 웹 수집 진행
             print(f"=== [DailyRoutineService] 파일 없음. KRX 웹 수집을 시작합니다. ===")
-            data_list = await self.fetch_service.fetch_all_data(date_str)
+            data_list = self.fetch_service.fetch_all_data(date_str)
         
         if not data_list:
             print("=== [DailyRoutineService] 🚨 데이터 확보 실패 (수집/로드 불가). 루틴을 종료합니다. ===")

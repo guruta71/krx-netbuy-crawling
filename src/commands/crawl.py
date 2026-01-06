@@ -2,7 +2,6 @@ import typer
 import datetime
 from dotenv import load_dotenv
 import os
-import asyncio
 
 # Services
 from core.services.daily_routine_service import DailyRoutineService
@@ -22,6 +21,7 @@ from infra.adapters.ranking_excel_adapter import RankingExcelAdapter
 from infra.adapters.excel.master_workbook_adapter import MasterWorkbookAdapter
 from infra.adapters.excel.master_sheet_adapter import MasterSheetAdapter
 from infra.adapters.excel.master_pivot_sheet_adapter import MasterPivotSheetAdapter
+from infra.adapters.pykrx_price_adapter import PykrxPriceAdapter
 
 def crawl(
     date: str = typer.Argument(None, help="대상 날짜 (YYYYMMDD 형식, 기본값: 오늘)"),
@@ -102,6 +102,7 @@ def crawl(
     # 5. 어댑터(Adapters) 인스턴스 생성 및 의존성 주입
     # (Infra Layer)
     krx_adapter = KrxHttpAdapter()
+    price_adapter = PykrxPriceAdapter()
     daily_adapter = DailyExcelAdapter(storages=save_storages, source_storage=source_storage)
     watchlist_adapter = WatchlistFileAdapter(storages=save_storages)
     
@@ -130,7 +131,8 @@ def crawl(
     ranking_data_service = RankingDataService(top_n=30)
     ranking_report_adapter = RankingExcelAdapter(
         source_storage=source_storage, 
-        target_storages=save_storages
+        target_storages=save_storages,
+        price_port=price_adapter
     )
     ranking_service = RankingAnalysisService(
         data_service=ranking_data_service,
@@ -147,7 +149,7 @@ def crawl(
 
     # 7. 메인 루틴 실행
     try:
-        asyncio.run(routine_service.execute(date_str=target_date))
+        routine_service.execute(date_str=target_date)
     except Exception as e:
         typer.echo(f"\n🚨 [CLI] Critical Error during execution: {e}", err=True)
         raise typer.Exit(code=1)
