@@ -1,118 +1,148 @@
 # infra/adapters/krx_http_adapter.py
+import cloudscraper
 import datetime
-import os
-import time
-import json
 from typing import Optional
-from playwright.sync_api import sync_playwright, Playwright, Browser, BrowserContext
+from playwright.sync_api import sync_playwright
 
 from core.ports.krx_data_port import KrxDataPort
 from core.domain.models import Market, Investor
 
 class KrxHttpAdapter(KrxDataPort):
-    """KrxDataPort의 구현체 (Pure Playwright Adapter).
-
-    Playwright만 사용하여 로그인, OTP 발급, 파일 다운로드를 수행합니다.
-    세션 불일치 문제를 해결하기 위해 브라우저 컨텍스트를 유지합니다.
-
-    Attributes:
-        otp_url (str): OTP 발급 URL.
-        download_url (str): 데이터 다운로드 URL.
-        session_file (str): 세션(쿠키/스토리지) 저장 파일 경로.
+    """Cloudscraper를 사용한 KRX 데이터 어댑터
+    
+    Playwright를 사용하여 세션 쿠키를 획득하고,
+    이후 데이터 다운로드는 순수 HTTP 요청으로 처리하는 하이브리드 방식
     """
     
-    def __init__(self):
-        """KrxHttpAdapter 초기화."""
-        super().__init__()
-        
-        # 환경 변수 로드
-        self.otp_url = os.getenv('KRX_OTP_URL')
-        self.download_url = os.getenv('KRX_DOWNLOAD_URL')
 
-        if not self.otp_url or not self.download_url:
-            raise EnvironmentError("KRX_OTP_URL or KRX_DOWNLOAD_URL is not set in environment variables.")
+
+    def __init__(self):
+        """KrxHttpAdapter 초기화"""
+        super().__init__()
+        self.scraper = cloudscraper.create_scraper()
+        self.otp_url = 'https://data.krx.co.kr/comm/fileDn/GenerateOTP/generate.cmd'
+        self.download_url = 'https://data.krx.co.kr/comm/fileDn/download_excel/download.cmd'
+        # Playwright와 동일한 User-Agent 설정
+        self.user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        self.scraper.headers.update({'User-Agent': self.user_agent})
         
-        self.session_file = "krx_session.json"
-        
-    def _login_if_needed(self, context: BrowserContext) -> bool:
-        """필요한 경우 로그인을 수행합니다.
+        # 로그인 정보 (사용자 요청에 따라 하드코딩)
+        self.username = 'zeya9643'
+        self.password = 'chlwltjr43!'
+
+    def _get_otp_code_via_playwright(self, otp_params: dict) -> tuple[str, dict]:
+        """Playwright를 사용하여 로그인 후, UI 상의 다운로드 버튼을 클릭하고 
+        발생하는 OTP 생성 요청을 가로채서 OTP 코드를 획득합니다.
         
         Args:
-            context (BrowserContext): 브라우저 컨텍스트.
+            otp_params: (참고용) 파라미터.
             
         Returns:
-            bool: 로그인 성공(또는 이미 로그인됨) 여부.
+            tuple[str, dict]: (OTP 코드, 쿠키 딕셔너리)
         """
-        page = context.new_page()
-        try:
-            # 세션 유효성 확인을 위해 로그인 후 접근 가능한 페이지 접속 시도
-            # 타겟 메뉴: 투자자별 순매수 상위 (MDC0201020303)
-            target_url = "https://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd?menuId=MDC0201020303"
-            print(f"  [KrxHttp] 세션 유효성 확인 중: {target_url}")
+        print("  [KrxHttp] Playwright로 로그인 및 OTP 획득 시도...")
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent=self.user_agent
+            )
+            page = context.new_page()
             
-            response = page.goto(target_url, timeout=30000)
-            page.wait_for_load_state('networkidle')
+            # OTP 코드를 저장할 변수
+            captured_otp = {"code": None}
             
-            # 확실한 로그인 체크: '로그아웃' 버튼이 있는지 확인
-            # KRX는 로그인 시 상단에 '로그아웃' 버튼이 표시됨
+            # 응답 핸들러
+            def handle_response(response):
+                if "generate.cmd" in response.url and response.ok:
+                    try:
+                        code = response.text().strip()
+                        if len(code) > 10 and "LOGOUT" not in code:
+                            print(f"  [KrxHttp] OTP 응답 감지됨 ({len(code)} 글자)")
+                            captured_otp["code"] = code
+                        else:
+                            print(f"  [KrxHttp] 유효하지 않은 OTP 응답: {code[:20]}...")
+                    except:
+                        pass
+            
+            page.on("response", handle_response)
+            
             try:
-                # 짧게 대기하며 '로그아웃' 텍스트 찾기
-                logout_btn = page.get_by_text("로그아웃").first
-                if logout_btn.is_visible():
-                    print("  [KrxHttp] ✅ 세션이 유효합니다 (로그아웃 버튼 확인됨)")
-                    return True
-            except Exception:
-                pass
-            
-            print("  [KrxHttp] ⚠️ 세션이 유효하지 않음 (로그아웃 버튼 없음). 로그인 시도 중...")
-            
-            # 로그인 절차 수행
-            login_url = 'https://data.krx.co.kr/contents/MDC/COMS/client/MDCCOMS001.cmd'
-            page.goto(login_url)
-            page.wait_for_load_state('networkidle')
-            
-            username = os.getenv('KRX_USERNAME')
-            password = os.getenv('KRX_PASSWORD')
-            
-            if not username or not password:
-                print("  [KrxHttp] 🚨 경고: KRX 인증 정보를 찾을 수 없습니다.")
-                return False
-
-            # 로그인 프레임 찾기
-            target_frame = None
-            for frame in page.frames:
-                if frame.locator('input[name="mbrId"]').count() > 0:
-                    target_frame = frame
-                    break
-            
-            if not target_frame:
-                print("  [KrxHttp] 🚨 오류: 로그인 프레임을 찾을 수 없습니다.")
-                return False
+                # 1. 로그인 수행
+                login_url = "https://data.krx.co.kr/contents/MDC/COMS/client/MDCCOMS001.cmd?locale=ko_KR"
+                page.goto(login_url, wait_until='networkidle', timeout=30000)
                 
-            target_frame.fill('input[name="mbrId"]', username)
-            target_frame.fill('input[name="pw"]', password)
-            
-            # 엔터키로 로그인 시도
-            target_frame.press('input[name="pw"]', 'Enter')
-            
-            # 로그인 완료 대기
-            time.sleep(3)
-            page.wait_for_load_state('networkidle')
-            
-            # 세션 갱신을 위해 메인/타겟 페이지 이동 (세션 쿠키가 확실히 셋팅되도록)
-            page.goto(target_url)
-            page.wait_for_load_state('networkidle')
-            
-            # 세션 저장 (다음 실행 시 재사용)
-            context.storage_state(path=self.session_file)
-            print("  [KrxHttp] ✅ 로그인 성공. 세션이 저장되었습니다.")
-            return True
-            
-        except Exception as e:
-            print(f"  [KrxHttp] 🚨 로그인 프로세스 실패: {e}")
-            return False
-        finally:
-            page.close()
+                # iframe 찾기
+                frame = page.frame_locator("#COMS001_FRAME")
+                
+                print("  [KrxHttp] 로그인 정보 입력 중...")
+                frame.locator("#mbrId").fill(self.username)
+                frame.locator("input[title='비밀번호']").fill(self.password)
+                
+                # 로그인 버튼 클릭
+                frame.locator(".jsLoginBtn").click()
+                print("  [KrxHttp] 로그인 버튼 클릭. 대기 중...")
+                
+                # 로그인 완료 대기 (메인 페이지로 리다이렉트되거나 특정 요소가 나타날 때까지)
+                # 안전하게 3초 대기
+                page.wait_for_timeout(3000)
+                
+                # 2. 통계 페이지 이동
+                # viewName을 지정하여 해당 서비스 모듈을 로드
+                stat_url = "https://data.krx.co.kr/contents/MDC/MDCCOM02005.jsp?viewName=MDCSTAT02401"
+                print(f"  [KrxHttp] 통계 페이지 이동: {stat_url}")
+                page.goto(stat_url, wait_until='networkidle', timeout=30000)
+                
+                # 3. 다운로드 버튼 클릭
+                # 버튼이 로드될 때까지 잠시 대기
+                page.wait_for_timeout(2000)
+                
+                # .CI-MDI-UNIT-DOWNLOAD 클래스가 여러 개일 수 있으므로 첫 번째 것 사용하거나, 
+                # 정확한 위치를 특정해야 함. 보통 상단 툴바에 있음.
+                download_btn = page.locator(".CI-MDI-UNIT-DOWNLOAD").first
+                
+                if download_btn.is_visible():
+                    download_btn.click()
+                    print("  [KrxHttp] 다운로드 버튼 클릭함")
+                    
+                    # 팝업 메뉴(Excel/CSV)가 뜨는 경우 'Excel' 선택
+                    # 보통 'csv'와 'excel' 클래스나 텍스트를 가진 버튼이 뜸
+                    # 여기서는 단순히 클릭 후 대기 (바로 요청이 가는 경우도 있음)
+                    
+                    # 혹시 메뉴가 뜨는지 확인 (예: .cmd-down-excel)
+                    excel_btn = page.locator(".cmd-down-excel, button:has-text('Excel'), button:has-text('CSV')") # CSV여도 OTP는 같음
+                    if excel_btn.count() > 0 and excel_btn.first.is_visible():
+                         print("  [KrxHttp] 엑셀/CSV 메뉴 감지됨. 클릭 시도.")
+                         excel_btn.first.click()
+                         
+                    page.wait_for_timeout(2000) 
+                else:
+                    print("  [KrxHttp] 경고: 다운로드 버튼을 찾을 수 없음. 페이지 로드 상태 확인 필요.")
+                    # 스크린샷 찍어서 확인해볼 수도 있음 (디버깅용)
+                
+                # 4. OTP 코드 획득 대기
+                for _ in range(10): # 최대 5초 대기
+                    if captured_otp["code"]:
+                        break
+                    page.wait_for_timeout(500)
+                
+                otp_code = captured_otp["code"]
+                
+                if not otp_code:
+                     raise ConnectionError("로그인 후에도 OTP 코드를 캡처하지 못했습니다. (UI 변경 또는 로딩 지연 가능성)")
+
+                print(f"  [KrxHttp] OTP 코드 획득 성공 (길이: {len(otp_code)})")
+                
+                # 5. 쿠키 추출
+                cookies = context.cookies()
+                cookie_dict = {cookie['name']: cookie['value'] for cookie in cookies}
+                
+                return otp_code, cookie_dict
+                
+            except Exception as e:
+                print(f"  [KrxHttp] Playwright 작업 중 오류: {e}")
+                raise
+            finally:
+                browser.close()
 
     def fetch_net_value_data(
         self, 
@@ -120,7 +150,7 @@ class KrxHttpAdapter(KrxDataPort):
         investor: Investor, 
         date_str: Optional[str] = None
     ) -> bytes:
-        """Playwright를 사용하여 데이터(Excel Bytes)를 가져옵니다.
+        """Cloudscraper를 사용하여 데이터(Excel Bytes)를 가져옵니다.
 
         Args:
             market (Market): 시장 구분 (KOSPI, KOSDAQ).
@@ -134,130 +164,61 @@ class KrxHttpAdapter(KrxDataPort):
             target_date = datetime.date.today().strftime('%Y%m%d')
         else:
             target_date = date_str
-            
-        print(f"  [KrxHttp] {target_date} {market.value} {investor.value} 데이터 수집 중 (Playwright)...")
-
-        with sync_playwright() as p:
-            # 브라우저 실행
-            browser = p.chromium.launch(headless=True)
-            
-            # 세션 로드 시도
-            if os.path.exists(self.session_file):
-                context = browser.new_context(
-                    storage_state=self.session_file,
-                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                )
-            else:
-                context = browser.new_context(
-                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                )
-            
-            try:
-                # 로그인 체크 및 수행 (필요 시 세션 갱신)
-                login_success = self._login_if_needed(context)
-                if not login_success:
-                    raise ConnectionError("로그인에 실패했습니다.")
-                
-                page = context.new_page()
-                
-                # API 호출을 위해 타겟 페이지로 이동
-                print(f"  [KrxHttp] 타겟 페이지로 이동 중...")
-                page.goto("https://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd?menuId=MDC0201020303")
-                page.wait_for_load_state('networkidle')
-
-                # [DEBUG] 로그인 직후 화면 캡처
-                screenshot_path = os.path.join(os.getcwd(), "debug_login_after.png")
-                page.screenshot(path=screenshot_path)
-                print(f"  [KrxHttp] [디버그] 스크린샷 저장: {screenshot_path}")
-
-                # OTP 요청 (Browser Context 내에서 JS fetch 실행)
-                otp_payload = self._create_otp_params(market, investor, target_date)
-                
-                print(f"  [KrxHttp] OTP 발급 요청 중 (Playwright Request API)...")
-                
-                # Context의 Request API를 사용하여 쿠키 포함
-                # IMPORTANT: page.request가 아닌 context.request를 사용해야 쿠키가 포함됨
-                response = context.request.post(
-                    'https://data.krx.co.kr/comm/fileDn/GenerateOTP/generate.cmd',
-                    data=otp_payload,
-                    headers={
-                        'Referer': 'https://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd?menuId=MDC0201020303',
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                )
-                
-                otp_code = response.text()
-                
-                # [DEBUG] OTP 응답 상세 정보 출력
-                print(f"  [KrxHttp] [디버그] OTP 응답 상태 코드: {response.status}")
-                print(f"  [KrxHttp] [디버그] OTP 응답 길이: {len(otp_code)} 문자")
-                print(f"  [KrxHttp] [디버그] OTP 코드: '{otp_code}'")
-                
-                # OTP 응답 검증
-                if 'LOGOUT' in otp_code or len(otp_code) < 10:
-                     # [DEBUG] 실패 시 화면 캡처
-                     fail_shot = os.path.join(os.getcwd(), "debug_otp_fail.png")
-                     page.screenshot(path=fail_shot)
-                     print(f"  [KrxHttp] [디버그] 실패 스크린샷 저장: {fail_shot}")
-                     raise ConnectionError(f"잘못된 OTP 응답 (LOGOUT?): {otp_code[:50]}")
-
-
-                # 파일 다운로드 요청 (직접 POST 요청)
-                print(f"  [KrxHttp] OTP로 파일 다운로드 중 (Direct POST)...")
-                
-                # Context의 Request API를 사용하여 쿠키 포함
-                # IMPORTANT: page.request가 아닌 context.request를 사용해야 쿠키가 포함됨
-                download_url = f'https://data.krx.co.kr/comm/fileDn/download_excel/download.cmd?code={otp_code}'
-                download_response = context.request.post(
-                    download_url,
-                    headers={
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                        'Referer': 'https://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd?menuId=MDC0201020303',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                        'Origin': 'https://data.krx.co.kr'
-                    }
-                )
-                
-                # [DEBUG] 응답 상세 정보 확인
-                print(f"  [KrxHttp] [디버그] 다운로드 응답 상태 코드: {download_response.status}")
-                
-                # [DEBUG] 응답 헤더 확인
-                headers = download_response.headers
-                print(f"  [KrxHttp] [디버그] Content-Type: {headers.get('content-type', 'N/A')}")
-                print(f"  [KrxHttp] [디버그] Content-Length: {headers.get('content-length', 'N/A')}")
-                print(f"  [KrxHttp] [디버그] Content-Disposition: {headers.get('content-disposition', 'N/A')}")
-                
-                # 파일 내용 읽기
-                file_bytes = download_response.body()
-                
-                # [DEBUG] 파일이 비어있을 때 응답 내용 확인
-                if len(file_bytes) == 0:
-                    print(f"  [KrxHttp] ⚠️ 경고: 다운로드된 파일이 비어있습니다 (0 bytes)")
-                    print(f"       → 날짜: {target_date}, 시장: {market.value}, 투자자: {investor.value}")
-                    print(f"       → 휴장일이거나 데이터가 없는 날짜일 수 있습니다")
-                else:
-                    # 파일 크기가 작으면 (HTML 오류 메시지일 가능성) 내용 출력
-                    if len(file_bytes) < 1000:
-                        try:
-                            content_preview = file_bytes.decode('utf-8', errors='ignore')[:500]
-                            print(f"  [KrxHttp] [디버그] 응답 내용 미리보기: {content_preview}")
-                        except:
-                            pass
-                
-                print(f"  [KrxHttp] ✅ 다운로드 성공 ({len(file_bytes)} bytes)")
-                
-                return file_bytes
-                
-            except Exception as e:
-                print(f"  [KrxHttp] 🚨 오류: Playwright 데이터 수집 실패: {e}")
-                raise
-            finally:
-                context.close()
-                browser.close()
-
-    def _create_otp_params(self, market: Market, investor: Investor, target_date: str) -> dict:
-        """KRX OTP 발급을 위한 요청 페이로드를 생성합니다."""
         
+        print(f"  [KrxHttp] {target_date} {market.value} {investor.value} 데이터 수집 중...")
+        
+        try:
+            # 1. OTP 파라미터 생성
+            otp_params = self._create_otp_params(market, investor, target_date)
+            
+            # 2. OTP 및 세션 쿠키 획득 (Playwright)
+            otp_code, session_cookies = self._get_otp_code_via_playwright(otp_params)
+            
+            if 'LOGOUT' in otp_code or len(otp_code) < 10:
+                 raise ConnectionError(f"잘못된 OTP 응답: {otp_code}")
+            
+            # 3. 데이터 다운로드 (HTTP - Cloudscraper)
+            self.scraper.cookies.update(session_cookies)
+            self.scraper.headers.update({
+                'Referer': 'https://data.krx.co.kr/contents/MDC/MDCCOM02005.jsp'
+            })
+            
+            print(f"  [KrxHttp] 파일 다운로드 중...")
+            download_response = self.scraper.post(
+                self.download_url,
+                data={'code': otp_code}
+            )
+            
+            print(f"  [KrxHttp] [디버그] 다운로드 응답 상태: {download_response.status_code}")
+            print(f"  [KrxHttp] [디버그] Content-Type: {download_response.headers.get('content-type', 'N/A')}")
+            
+            file_bytes = download_response.content
+            
+            if len(file_bytes) == 0:
+                print(f"  [KrxHttp] 경고: 다운로드된 파일이 비어있습니다 (0 bytes)")
+                print(f"       -> 날짜: {target_date}, 시장: {market.value}, 투자자: {investor.value}")
+                print(f"       -> 휴장일이거나 데이터가 없는 날짜일 수 있습니다")
+            
+            print(f"  [KrxHttp] 다운로드 성공 ({len(file_bytes)} bytes)")
+            return file_bytes
+            
+        except Exception as e:
+            print(f"  [KrxHttp] 오류: 데이터 수집 실패: {e}")
+            raise
+            
+
+    
+    def _create_otp_params(self, market: Market, investor: Investor, target_date: str) -> dict:
+        """KRX OTP 발급을 위한 요청 파라미터를 생성합니다.
+        
+        Args:
+            market: 시장 구분
+            investor: 투자자 구분
+            target_date: 대상 날짜 (YYYYMMDD)
+            
+        Returns:
+            dict: OTP 요청 파라미터
+        """
         params = {
             'locale': 'ko_KR',
             'invstTpCd': '',
@@ -274,15 +235,15 @@ class KrxHttpAdapter(KrxDataPort):
             params['mktId'] = 'STK'
         elif market == Market.KOSDAQ:
             params['mktId'] = 'KSQ'
-            params['segTpCd'] = 'ALL' 
+            params['segTpCd'] = 'ALL'
         else:
-            raise ValueError(f"Unsupported market ID: {market}")
-
+            raise ValueError(f"Unsupported market: {market}")
+        
         if investor == Investor.INSTITUTIONS:
             params['invstTpCd'] = '7050'
         elif investor == Investor.FOREIGNER:
             params['invstTpCd'] = '9000'
         else:
             raise ValueError(f"Unsupported investor type: {investor}")
-            
+        
         return params
