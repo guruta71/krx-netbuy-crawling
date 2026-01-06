@@ -21,7 +21,13 @@ class ExcelFormatter:
         'yellow': 'FFFF00',           # 노랑
         'green': '92D050',            # 초록
         'light_blue': '00B0F0',       # 하늘색
+        # 신고가 지표 색상
+        'all_time_high': 'FF0000',    # 역사적 신고가 (빨간색)
+        'near_all_time_high': 'FFC000',  # 역사적 근접 (주황색)
+        'week_52_high': 'FFFF00',     # 52주 신고가 (노란색)
+        'near_52w_high': '92D050',    # 52주 근접 (연두색/초록색)
     }
+
     
     @staticmethod
     def apply_header_fill(

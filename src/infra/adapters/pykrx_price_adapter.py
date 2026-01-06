@@ -31,25 +31,44 @@ class PykrxPriceAdapter(PriceDataPort):
         try:
             print(f"  [Adapter:PykrxPrice] {ticker} 가격 정보 조회 시작 ({date_str})...")
             
-            # 1. 해당 날짜의 종가 조회
-            close_price = self._get_close_price(ticker, date_str)
-            if close_price is None:
-                print(f"  [Adapter:PykrxPrice] {ticker} 종가 조회 실패")
+            target_date_dt = datetime.strptime(date_str, "%Y%m%d")
+            # 역사적 신고가는 1990년 1월 1일부터 조회
+            start_date_hist = "19900101"
+            
+            # API 호출 최적화: 한 번에 과거 데이터 조회
+            df = stock.get_market_ohlcv(start_date_hist, date_str, ticker)
+            
+            if df is None or df.empty:
+                print(f"  [Adapter:PykrxPrice] {ticker} 데이터 없음")
                 return None
             
-            # 2. 52주 신고가 조회
-            high_52w = self._get_52w_high(ticker, date_str)
-            if high_52w is None:
-                print(f"  [Adapter:PykrxPrice] {ticker} 52주 신고가 조회 실패")
-                return None
+            # 종가 (오늘 데이터)
+            # 마지막 행을 기준일자로 가정
+            close_price = float(df['종가'].iloc[-1])
             
-            # 3. 역사적 신고가 조회 (최근 10년으로 제한)
-            all_time_high = self._get_all_time_high(ticker, date_str)
-            if all_time_high is None:
-                print(f"  [Adapter:PykrxPrice] {ticker} 역사적 신고가 조회 실패")
-                return None
+            # 기준 데이터 (오늘 제외)
+            df_past = df.iloc[:-1]
             
-            print(f"  [Adapter:PykrxPrice] ✅ {ticker} 조회 완료 (종가: {close_price:,}, 52주: {high_52w:,}, 역사적: {all_time_high:,})")
+            if df_past.empty:
+                # 과거 데이터가 없으면(상장 첫날 등) 0으로 설정하여 무조건 신고가 달성 처리
+                high_52w = 0.0
+                all_time_high = 0.0
+            else:
+                # 역사적 신고가 (과거 전체 고가 중 최고가)
+                all_time_high = float(df_past['고가'].max())
+                
+                # 52주 신고가 (과거 52주 고가 중 최고가)
+                start_date_52w = target_date_dt - timedelta(weeks=52)
+                # DataFrame 인덱스가 datetime 형식이므로 직접 비교 가능
+                df_52w = df_past[df_past.index >= start_date_52w]
+                
+                if not df_52w.empty:
+                    high_52w = float(df_52w['고가'].max())
+                else:
+                    # 52주 데이터가 없으면(예: 상장 1달차) 역사적 고가 사용 
+                    high_52w = all_time_high
+
+            print(f"  [Adapter:PykrxPrice] OK: {ticker} 조회 완료 (종가: {close_price:,.0f}, 전일기준 52주고가: {high_52w:,.0f}, 전일기준 역사적고가: {all_time_high:,.0f})")
             
             return StockPriceInfo(
                 ticker=ticker,
@@ -59,46 +78,7 @@ class PykrxPriceAdapter(PriceDataPort):
             )
             
         except Exception as e:
-            print(f"  [Adapter:PykrxPrice] 🚨 {ticker} 가격 조회 중 오류: {e}")
-            return None
-    
-    def _get_close_price(self, ticker: str, date_str: str) -> Optional[float]:
-        """해당 날짜의 종가를 조회합니다."""
-        try:
-            df = stock.get_market_ohlcv(date_str, date_str, ticker)
-            if df.empty:
-                return None
-            return float(df['종가'].iloc[0])
-        except Exception as e:
-            print(f"  [Adapter:PykrxPrice] 종가 조회 오류: {e}")
-            return None
-    
-    def _get_52w_high(self, ticker: str, date_str: str) -> Optional[float]:
-        """52주(365일) 신고가를 조회합니다."""
-        try:
-            # 365일 전 날짜 계산
-            target_date = datetime.strptime(date_str, "%Y%m%d")
-            start_date = (target_date - timedelta(days=365)).strftime("%Y%m%d")
-            
-            df = stock.get_market_ohlcv(start_date, date_str, ticker)
-            if df.empty:
-                return None
-            return float(df['고가'].max())
-        except Exception as e:
-            print(f"  [Adapter:PykrxPrice] 52주 신고가 조회 오류: {e}")
-            return None
-    
-    def _get_all_time_high(self, ticker: str, date_str: str) -> Optional[float]:
-        """역사적 신고가를 조회합니다 (최근 10년으로 제한)."""
-        try:
-            # 10년(3650일) 전 날짜 계산
-            target_date = datetime.strptime(date_str, "%Y%m%d")
-            start_date = (target_date - timedelta(days=3650)).strftime("%Y%m%d")
-            
-            df = stock.get_market_ohlcv(start_date, date_str, ticker)
-            if df.empty:
-                return None
-            return float(df['고가'].max())
-        except Exception as e:
-            print(f"  [Adapter:PykrxPrice] 역사적 신고가 조회 오류: {e}")
+            import traceback
+            traceback.print_exc()
+            print(f"  [Adapter:PykrxPrice] ERROR: {ticker} 가격 조회 중 오류: {e}")
             return None

@@ -6,6 +6,7 @@ setuptools>=65.0.0
 # Web scraping
 cloudscraper>=1.2.71
 beautifulsoup4>=4.12.0
+playwright>=1.40.0
 
 # Data processing
 pandas>=2.0.0
