@@ -213,7 +213,7 @@ class RankingExcelAdapter(RankingReportPort):
                     val = sheet[f"{stock_col}{row}"].value
                     # (쌍) 등 제거
                     if val and isinstance(val, str):
-                        clean_name = val.split(' (')[0]
+                        clean_name = val.replace(' (쌍)', '')
                         sheet_stocks.add(clean_name)
                 history_dfs.append(sheet_stocks)
                 if len(history_dfs) >= 5: # 5일 이상이면 충분 (5+가 최대 등급이므로)
@@ -276,7 +276,8 @@ class RankingExcelAdapter(RankingReportPort):
                 stock_name = stock_cell.value
                 
                 if stock_name and isinstance(stock_name, str):
-                    section_ranks[stock_name] = i + 1  # 1-based rank
+                    clean_name = stock_name.replace(' (쌍)', '')
+                    section_ranks[clean_name] = i + 1  # 1-based rank
             
             rankings[key] = section_ranks
             
